@@ -59,7 +59,7 @@ impl DnsClient for HyperDnsClient {
     }
 }
 
-// This is a static URL that resolves the Google DNS name statically to 8.8.8.8 and
+// This is resolver that statically resolves the Google DNS name to 8.8.8.8 and
 // 8.8.4.4 in a round robin fashion. The Cloudflare IPs are not resolved since those
 // are already statically defined in the request URL.
 #[derive(Clone)]
