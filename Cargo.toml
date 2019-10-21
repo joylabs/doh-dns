@@ -1,0 +1,24 @@
+[package]
+name = "doh-dns"
+version = "0.1.0"
+authors = ["Isaac Saldana <isaacsaldana@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
+hyper-tls = "0.4.0-alpha.4"
+native-tls = "0.2"
+futures-util-preview = "0.3.0-alpha.19"
+serde_json = "1.0"
+serde_derive = "1.0"
+serde = "1.0"
+async-trait = "0.1.13"
+num = "0.2.0"
+num-traits = "0.2"
+num-derive = "0.3.0"
+idna = "0.2.0"
+tokio = "0.2.0-alpha.6"
+paste = "0.1.6"
+log = "0.4.8"
