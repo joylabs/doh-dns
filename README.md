@@ -7,7 +7,7 @@ This DNS over HTTP (DoH) library queries public DoH servers provided by Google a
 The library supports timeouts and retries which can be fully customized. A utility in the `dohdns` directory is provided in this crate to use this library in the command line.
 
 ## Quick Start
-To quickly get started, a default client can be created with `Dns:default()` and `A` records can be queried using `Dns::resolve_a()`. The default resolvers use Google first with a timeout of 3 seconds and Clouflare second with a timeout of 10 seconds. *Note: Cloudlare does not support queries for `ANY` records. You can use the Google resolver for that.
+To quickly get started, a default client can be created with `Dns:default()` and `A` records can be queried using `Dns::resolve_a()`. The default resolvers use Google first with a timeout of 3 seconds and Clouflare second with a timeout of 10 seconds. *Note: Cloudlare does not support queries for `ANY` records. You can use the Google resolver for that.*
 
 # Example
 
