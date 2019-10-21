@@ -1,40 +1,4 @@
 use doh_dns::{client::HyperDnsClient, Dns, DnsHttpServer};
-use std::time::Duration;
-use tokio;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The following sets up the main DoH server to be Google with a default timeout
-    // of 2 seconds. If a retry is needed, the Cloudflare's 1.1.1.1 server is used.
-    // Alternatively, the default server setup can be used with:
-    // let dns = Dns::default();
-    let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
-        DnsHttpServer::Google(Duration::from_secs(2)),
-        DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
-    ])
-    .unwrap();
-    match dns.resolve_a("memo.com").await {
-        Ok(responses) => {
-            if responses.is_empty() {
-                println!("No entries found.");
-            } else {
-                for res in responses {
-                    println!(
-                        "name: {}, type: {}, TTL: {}, data: {}",
-                        res.name,
-                        dns.rtype_to_name(res.r#type),
-                        res.TTL,
-                        res.data
-                    );
-                }
-            }
-        }
-        Err(err) => println!("Error: {}", err),
-    }
-    Ok(())
-}
-/*
-use doh_dns::{client::HyperDnsClient, Dns, DnsHttpServer};
 use log::{Level, LevelFilter, Metadata, Record};
 #[macro_use]
 extern crate prettytable;
@@ -105,4 +69,3 @@ impl log::Log for SimpleLogger {
 
     fn flush(&self) {}
 }
-*/
