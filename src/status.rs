@@ -1,4 +1,4 @@
-//! Status codes returned from the DNS over HTTP server.
+//! Status codes returned from the DNS over HTTPS server.
 use std::fmt;
 /// These codes were obtained from
 /// <https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6>.

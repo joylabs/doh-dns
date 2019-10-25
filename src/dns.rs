@@ -1,7 +1,7 @@
 use crate::client::{DnsClient, HyperDnsClient};
 use crate::error::{DnsError, QueryError};
 use crate::status::RCode;
-use crate::{Dns, DnsAnswer, DnsHttpServer, DnsResponse};
+use crate::{Dns, DnsAnswer, DnsHttpsServer, DnsResponse};
 use futures_util::TryStreamExt;
 use hyper::Uri;
 use idna;
@@ -14,8 +14,8 @@ impl Default for Dns<HyperDnsClient> {
         Dns {
             client: HyperDnsClient::default(),
             servers: vec![
-                DnsHttpServer::Google(Duration::from_secs(3)),
-                DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+                DnsHttpsServer::Google(Duration::from_secs(3)),
+                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
             ],
         }
     }
@@ -26,7 +26,7 @@ impl<C: DnsClient> Dns<C> {
     /// (in seconds). These servers are tried in the given order. If a request fails on
     /// the first one, each subsequent server is tried. Only on certain failures a new
     /// request is retried such as a connection failure or certain server return codes.
-    pub fn with_servers(servers: &[DnsHttpServer]) -> Result<Dns<C>, DnsError> {
+    pub fn with_servers(servers: &[DnsHttpsServer]) -> Result<Dns<C>, DnsError> {
         if servers.is_empty() {
             return Err(DnsError::NoServers);
         }
@@ -77,7 +77,7 @@ impl<C: DnsClient> Dns<C> {
         }
     }
 
-    // Generates the DNS over HTTP request on the given name for rtype. It filters out
+    // Generates the DNS over HTTPS request on the given name for rtype. It filters out
     // results that are not of the given rtype with the exception of `ANY`.
     async fn request_and_process(
         &self,
@@ -101,7 +101,7 @@ impl<C: DnsClient> Dns<C> {
         }
     }
 
-    // Creates the HTTP request to the server. In certain occasions, it retries to a new server
+    // Creates the HTTPS request to the server. In certain occasions, it retries to a new server
     // if one is available.
     async fn client_request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError> {
         // Name has to be puny encoded.
@@ -365,7 +365,7 @@ pub mod tests {
         );
         let d = Dns {
             client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpServer::Google(Duration::from_secs(5))],
+            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
         };
         let r = d.resolve_a("sendgrid.com").await.unwrap();
         assert_eq!(r.len(), 4);
@@ -441,7 +441,7 @@ pub mod tests {
         );
         let d = Dns {
             client: MockDnsClient::new(&[(response.clone(), StatusCode::OK)]),
-            servers: vec![DnsHttpServer::Google(Duration::from_secs(5))],
+            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
         };
         let r = d.resolve_mx_and_sort("gmail.com").await.unwrap();
         assert_eq!(r.len(), 5);
@@ -468,7 +468,7 @@ pub mod tests {
 
         let d = Dns {
             client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpServer::Google(Duration::from_secs(5))],
+            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
         };
         let r = d.resolve_mx("gmail.com").await.unwrap();
         assert_eq!(r.len(), 5);
@@ -548,7 +548,7 @@ pub mod tests {
         );
         let d = Dns {
             client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpServer::Google(Duration::from_secs(5))],
+            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
         };
         let r = d.resolve_txt("google.com").await.unwrap();
         assert_eq!(r.len(), 5);
@@ -620,8 +620,8 @@ pub mod tests {
                 (response.clone(), StatusCode::OK),
             ]),
             servers: vec![
-                DnsHttpServer::Google(Duration::from_secs(5)),
-                DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
+                DnsHttpsServer::Google(Duration::from_secs(5)),
+                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
             ],
         };
         let r = d.resolve_a("www.google.com").await.unwrap();
@@ -638,8 +638,8 @@ pub mod tests {
                 (response.clone(), StatusCode::OK),
             ]),
             servers: vec![
-                DnsHttpServer::Google(Duration::from_secs(5)),
-                DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
+                DnsHttpsServer::Google(Duration::from_secs(5)),
+                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
             ],
         };
         let r = d.resolve_a("www.google.com").await;
@@ -651,7 +651,7 @@ pub mod tests {
                 ("".to_owned(), StatusCode::INTERNAL_SERVER_ERROR),
                 (response.clone(), StatusCode::OK),
             ]),
-            servers: vec![DnsHttpServer::Google(Duration::from_secs(5))],
+            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
         };
         let r = d.resolve_a("www.google.com").await;
         assert!(r.is_err());

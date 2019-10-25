@@ -1,6 +1,6 @@
 [package]
 name = "doh-dns"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Joy Labs Engineering"]
 edition = "2018"
 repository = "https://github.com/joylabs/doh-dns"
@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["dns", "doh"]
 description = """
-A DNS over HTTP (DoH) library that queries public DoH servers provided by 
+A DNS over HTTPS (DoH) library that queries public DoH servers provided by 
 Google and Clouflare based on `async/await`, `hyper`, and `tokio`.
 """
 

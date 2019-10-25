@@ -1,6 +1,6 @@
-//! Library to make DNS over HTTP requests.
+//! Library to make DNS over HTTPS requests.
 //!
-//! This DNS over HTTP (DoH) library queries public DoH servers provided by Google and
+//! This DNS over HTTPS (DoH) library queries public DoH servers provided by Google and
 //! Clouflare. It is based on `async/await` with the help of `hyper` and `tokio`.
 //!
 //! The library supports timeouts and retries which can be fully customized. A utility
@@ -16,7 +16,7 @@
 //!
 //! # Example
 //! ```
-//! use doh_dns::{client::HyperDnsClient, Dns, DnsHttpServer};
+//! use doh_dns::{client::HyperDnsClient, Dns, DnsHttpsServer};
 //! use std::time::Duration;
 //! use tokio;
 //!
@@ -27,8 +27,8 @@
 //!     // Alternatively, the default server setup can be used with:
 //!     // let dns = Dns::default();
 //!     let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
-//!         DnsHttpServer::Google(Duration::from_secs(2)),
-//!         DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+//!         DnsHttpsServer::Google(Duration::from_secs(2)),
+//!         DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
 //!     ])
 //!     .unwrap();
 //!     match dns.resolve_a("memo.com").await {
@@ -69,7 +69,7 @@ extern crate num;
 extern crate num_derive;
 use std::time::Duration;
 
-/// The data associated for requests returned by the DNS over HTTP servers.
+/// The data associated for requests returned by the DNS over HTTPS servers.
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct DnsAnswer {
@@ -92,11 +92,11 @@ struct DnsResponse {
     Comment: Option<String>,
 }
 
-/// The list of DNS over HTTP servers allowed to query with their respective timeouts.
+/// The list of DNS over HTTPS servers allowed to query with their respective timeouts.
 /// These servers are given to [Dns::with_servers] in order of priority. Only subsequent
 /// servers are used if the request needs to be retried.
 #[derive(Clone)]
-pub enum DnsHttpServer {
+pub enum DnsHttpsServer {
     /// Googe's DoH server. Unfortunately, Google doesn't allow to query `8.8.8.8` or
     /// `8.8.4.4` directly. It needs the hostname `dns.google`. If this option is
     /// given, `8.8.8.8` and `8.8.4.4` will be used in round robin form for each new
@@ -110,7 +110,7 @@ pub enum DnsHttpServer {
     Cloudflare1_0_0_1(Duration),
 }
 
-impl DnsHttpServer {
+impl DnsHttpsServer {
     fn uri(&self) -> &str {
         match self {
             Self::Google(_) => "https://dns.google/resolve",
@@ -130,5 +130,5 @@ impl DnsHttpServer {
 /// The main interface to this library. It provides all functions to query records.
 pub struct Dns<C: client::DnsClient> {
     client: C,
-    servers: Vec<DnsHttpServer>,
+    servers: Vec<DnsHttpsServer>,
 }

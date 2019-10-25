@@ -2,7 +2,7 @@
 use crate::status::RCode;
 use std::{error::Error, fmt};
 
-/// Errors returned before or after making a DNS request over HTTP.
+/// Errors returned before or after making a DNS request over HTTPS.
 #[derive(Debug)]
 pub enum DnsError {
     /// An error occurred before making the request. This can when a name is of

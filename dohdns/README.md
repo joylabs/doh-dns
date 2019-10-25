@@ -1,5 +1,5 @@
 # dohdns
-A utility to query DNS records using DNS over HTTP public servers provided by Google and Cloudflare.
+A utility to query DNS records using DNS over HTTPS public servers provided by Google and Cloudflare.
 
 To install run
 

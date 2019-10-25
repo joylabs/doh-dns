@@ -1,8 +1,10 @@
 [package]
 name = "dohdns"
-version = "0.1.0"
-authors = ["Isaac Saldana <isaacsaldana@gmail.com>"]
+version = "0.1.1"
+authors = ["Joy Labs Engineering"]
 edition = "2018"
+license = "MIT"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

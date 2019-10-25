@@ -1,4 +1,4 @@
-//! HTTP client to query DoH servers.
+//! HTTPS client to query DoH servers.
 use async_trait::async_trait;
 use futures_util::future::{err, ok, Ready};
 use hyper::client::connect::dns::{Name, Resolve};
