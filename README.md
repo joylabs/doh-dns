@@ -12,7 +12,7 @@ To quickly get started, a default client can be created with `Dns:default()` and
 # Example
 
 ```rust
-use doh_dns::{client::HyperDnsClient, Dns, DnsHttpServer};
+use doh_dns::{client::HyperDnsClient, Dns, DnsHttpsServer};
 use std::time::Duration;
 use tokio;
 
@@ -23,11 +23,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Alternatively, the default server setup can be used with:
     // let dns = Dns::default();
     let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
-        DnsHttpServer::Google(Duration::from_secs(2)),
-        DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+        DnsHttpsServer::Google(Duration::from_secs(2)),
+        DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
     ])
     .unwrap();
-    match dns.resolve_a("memo.com").await {
+    match dns.resolve_a("www.cloudflare.com").await {
         Ok(responses) => {
             if responses.is_empty() {
                 println!("No entries found.");
