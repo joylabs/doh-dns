@@ -1,10 +1,18 @@
 [package]
 name = "doh-dns"
 version = "0.1.0"
-authors = ["Isaac Saldana <isaacsaldana@gmail.com>"]
+authors = ["Joy Labs Engineering"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/joylabs/doh-dns"
+homepage = "https://github.com/joylabs/doh-dns"
+documentation = "https://docs.rs/doh-dns"
+license = "MIT"
+readme = "README.md"
+keywords = ["dns", "doh"]
+description = """
+A DNS over HTTP (DoH) library that queries public DoH servers provided by 
+Google and Clouflare based on `async/await`, `hyper`, and `tokio`.
+"""
 
 [dependencies]
 hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
