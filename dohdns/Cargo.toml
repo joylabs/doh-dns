@@ -1,0 +1,13 @@
+[package]
+name = "dohdns"
+version = "0.1.0"
+authors = ["Isaac Saldana <isaacsaldana@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+doh-dns = { path = "../" }
+prettytable-rs = "0.8.0"
+log = "0.4.8"
+tokio = "0.2.0-alpha.6"
