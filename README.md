@@ -1,6 +1,11 @@
 # doh-dns
 A library to make DNS over HTTPS requests.
 
+[![Crates.io][crates-badge]][crates-url] [Documentation](https://docs.rs/doh-dns)
+
+[crates-badge]: https://img.shields.io/crates/v/doh-dns.svg
+[crates-url]: https://crates.io/crates/doh-dns
+
 ## Overview
 This DNS over HTTPS (DoH) library queries public DoH servers provided by Google and Clouflare. It is based on `async/await` with the help of `hyper` and `tokio`. As a result, it requires the `nightly` version of `Rust`.
 
