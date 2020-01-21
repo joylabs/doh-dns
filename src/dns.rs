@@ -2,12 +2,11 @@ use crate::client::{DnsClient, HyperDnsClient};
 use crate::error::{DnsError, QueryError};
 use crate::status::RCode;
 use crate::{Dns, DnsAnswer, DnsHttpsServer, DnsResponse};
-use futures_util::TryStreamExt;
 use hyper::Uri;
 use idna;
 use log::error;
 use std::time::Duration;
-use tokio::future::FutureExt;
+use tokio::time::timeout;
 
 impl Default for Dns<HyperDnsClient> {
     fn default() -> Dns<HyperDnsClient> {
@@ -117,11 +116,11 @@ impl<C: DnsClient> Dns<C> {
                 Ok(endpoint) => endpoint,
             };
 
-            error = match self.client.get(endpoint).timeout(server.timeout()).await {
+            error = match timeout(server.timeout(), self.client.get(endpoint)).await {
                 Ok(Err(e)) => QueryError::Connection(e.to_string()),
                 Ok(Ok(res)) => {
                     match res.status().as_u16() {
-                        200 => match res.into_body().try_concat().await {
+                        200 => match hyper::body::to_bytes(res).await {
                             Err(e) => QueryError::ReadResponse(e.to_string()),
                             Ok(body) => match serde_json::from_slice::<DnsResponse>(&body) {
                                 Err(e) => QueryError::ParseResponse(e.to_string()),

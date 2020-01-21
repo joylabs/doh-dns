@@ -1,9 +1,10 @@
 //! HTTPS client to query DoH servers.
 use async_trait::async_trait;
 use futures_util::future::{err, ok, Ready};
-use hyper::client::connect::dns::{Name, Resolve};
 use hyper::{
-    client::HttpConnector, error::Result as HyperResult, Body, Client, Request, Response, Uri,
+    client::{connect::dns::Name, HttpConnector},
+    error::Result as HyperResult,
+    Body, Client, Request, Response, Uri,
 };
 use hyper_tls::HttpsConnector;
 use std::{
@@ -13,7 +14,9 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    task::{self, Poll},
 };
+use tower_service::Service;
 
 /// Creates a `GET` request over the given `URI` and returns its response. It is used to
 /// request data from DoH servers.
@@ -75,11 +78,16 @@ impl UrlStaticResolver {
     }
 }
 
-impl Resolve for UrlStaticResolver {
-    type Addrs = UrlStaticAddrs;
+impl Service<Name> for UrlStaticResolver {
+    type Response = UrlStaticAddrs;
+    type Error = io::Error;
     type Future = Ready<Result<UrlStaticAddrs, io::Error>>;
 
-    fn resolve(&self, name: Name) -> Self::Future {
+    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), io::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, name: Name) -> Self::Future {
         if name.as_str() == "dns.google" {
             let rr_ref = Arc::clone(&self.round_robin);
             let rr = rr_ref.load(Ordering::Relaxed);
@@ -123,12 +131,12 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_static_resolve() {
-        let resolver = UrlStaticResolver::new();
+        let mut resolver = UrlStaticResolver::new();
         let n = Name::from_str("dns.google").unwrap();
-        let mut g1 = resolver.resolve(n.clone()).await.unwrap();
+        let mut g1 = resolver.call(n.clone()).await.unwrap();
         assert_eq!(g1.next(), Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
         assert_eq!(g1.next(), None);
-        let mut g2 = resolver.resolve(n.clone()).await.unwrap();
+        let mut g2 = resolver.call(n.clone()).await.unwrap();
         assert_eq!(g2.next(), Some(IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4))));
         assert_eq!(g2.next(), None);
     }

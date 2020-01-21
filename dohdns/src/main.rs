@@ -1,4 +1,4 @@
-use doh_dns::{client::HyperDnsClient, Dns, DnsHttpServer};
+use doh_dns::{client::HyperDnsClient, Dns, DnsHttpsServer};
 use log::{Level, LevelFilter, Metadata, Record};
 #[macro_use]
 extern crate prettytable;
@@ -22,8 +22,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
-        DnsHttpServer::Google(Duration::from_secs(2)),
-        DnsHttpServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+        DnsHttpsServer::Google(Duration::from_secs(2)),
+        DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
     ])
     .unwrap();
     match dns.resolve_str_type(&args[2], &args[1]).await {
