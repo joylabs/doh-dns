@@ -77,7 +77,8 @@ impl<C: DnsClient> Dns<C> {
     }
 
     // Generates the DNS over HTTPS request on the given name for rtype. It filters out
-    // results that are not of the given rtype with the exception of `ANY`.
+    // results that are not of the given rtype with the exception of `ANY`. Also
+    // CNAME chains are returned when requesting A/AAAA records.
     async fn request_and_process(
         &self,
         name: &str,
@@ -92,7 +93,7 @@ impl<C: DnsClient> Dns<C> {
                     .into_iter()
                     // Get only the record types requested. There is only exception and that is
                     // the ANY record which has a value of 0.
-                    .filter(|a| a.r#type == rtype.0 || rtype.0 == 0)
+                    .filter(|a| a.r#type == rtype.0 || rtype.0 == 0 || allow_cname(a, rtype))
                     .collect::<Vec<_>>()),
                 Some(code) => Err(DnsError::Status(code)),
                 None => Err(DnsError::Status(RCode::Unknown)),
@@ -152,6 +153,13 @@ impl<C: DnsClient> Dns<C> {
         }
         Err(error)
     }
+}
+
+fn allow_cname(answer: &DnsAnswer, request: &Rtype) -> bool {
+    if request.0 == 1 || request.0 == 28 {
+        return answer.r#type == 5;
+    }
+    return false;
 }
 
 struct Rtype(pub u32, pub &'static str);
