@@ -1,44 +1,46 @@
 use crate::client::{DnsClient, HyperDnsClient};
-use crate::error::{DnsError, QueryError};
+use crate::error::DnsError;
 use crate::status::RCode;
-use crate::{Dns, DnsAnswer, DnsHttpsServer, DnsResponse};
-use hyper::Uri;
-use idna;
-use log::error;
-use std::time::Duration;
-use tokio::time::timeout;
+use crate::DnsHttpsServer;
+
+/// The main interface to this library. It provides all functions to query records.
+pub struct Dns<C = HyperDnsClient> {
+    client: C,
+}
 
 impl Default for Dns<HyperDnsClient> {
     fn default() -> Dns<HyperDnsClient> {
         Dns {
             client: HyperDnsClient::default(),
-            servers: vec![
-                DnsHttpsServer::Google(Duration::from_secs(3)),
-                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
-            ],
         }
     }
 }
 
-impl<C: DnsClient> Dns<C> {
+impl Dns<HyperDnsClient> {
     /// Creates an instance with the given servers along with their respective timeouts
     /// (in seconds). These servers are tried in the given order. If a request fails on
     /// the first one, each subsequent server is tried. Only on certain failures a new
     /// request is retried such as a connection failure or certain server return codes.
-    pub fn with_servers(servers: &[DnsHttpsServer]) -> Result<Dns<C>, DnsError> {
+    pub fn with_servers(servers: Vec<DnsHttpsServer>) -> Result<Dns<HyperDnsClient>, DnsError> {
         if servers.is_empty() {
             return Err(DnsError::NoServers);
         }
-        Ok(Dns {
-            client: C::default(),
-            servers: servers.to_vec(),
-        })
+
+        Ok(Dns::new(
+            HyperDnsClient::builder().with_servers(servers).build(),
+        ))
+    }
+}
+
+impl<C: DnsClient> Dns<C> {
+    pub fn new(client: C) -> Dns<C> {
+        Dns { client }
     }
 
     /// Returns MX records in order of priority for the given name. It removes the priorities
     /// from the data.
     pub async fn resolve_mx_and_sort(&self, domain: &str) -> Result<Vec<DnsAnswer>, DnsError> {
-        match self.client_request(domain, &RTYPE_mx).await {
+        match self.client.request(domain, &RTYPE_mx).await {
             Err(e) => Err(DnsError::Query(e)),
             Ok(res) => match num::FromPrimitive::from_u32(res.Status) {
                 Some(RCode::NoError) => {
@@ -84,7 +86,7 @@ impl<C: DnsClient> Dns<C> {
         name: &str,
         rtype: &Rtype,
     ) -> Result<Vec<DnsAnswer>, DnsError> {
-        match self.client_request(name, rtype).await {
+        match self.client.request(name, rtype).await {
             Err(e) => Err(DnsError::Query(e)),
             Ok(res) => match num::FromPrimitive::from_u32(res.Status) {
                 Some(RCode::NoError) => Ok(res
@@ -100,59 +102,29 @@ impl<C: DnsClient> Dns<C> {
             },
         }
     }
+}
 
-    // Creates the HTTPS request to the server. In certain occasions, it retries to a new server
-    // if one is available.
-    async fn client_request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError> {
-        // Name has to be puny encoded.
-        let name = match idna::domain_to_ascii(name) {
-            Ok(name) => name,
-            Err(e) => return Err(QueryError::InvalidName(format!("{:?}", e))),
-        };
-        let mut error = QueryError::Unknown;
-        for server in self.servers.iter() {
-            let url = format!("{}?name={}&type={}", server.uri(), name, rtype.1);
-            let endpoint = match url.parse::<Uri>() {
-                Err(e) => return Err(QueryError::InvalidEndpoint(e.to_string())),
-                Ok(endpoint) => endpoint,
-            };
+/// The data associated for requests returned by the DNS over HTTPS servers.
+#[allow(non_snake_case)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct DnsAnswer {
+    /// The name of the record.
+    pub name: String,
+    /// The type associated with each record. To convert to a string representation use
+    /// [Dns::rtype_to_name].
+    pub r#type: u32,
+    /// The time to live in seconds for this record.
+    pub TTL: u32,
+    /// The data associated with the record.
+    pub data: String,
+}
 
-            error = match timeout(server.timeout(), self.client.get(endpoint)).await {
-                Ok(Err(e)) => QueryError::Connection(e.to_string()),
-                Ok(Ok(res)) => {
-                    match res.status().as_u16() {
-                        200 => match hyper::body::to_bytes(res).await {
-                            Err(e) => QueryError::ReadResponse(e.to_string()),
-                            Ok(body) => match serde_json::from_slice::<DnsResponse>(&body) {
-                                Err(e) => QueryError::ParseResponse(e.to_string()),
-                                Ok(res) => {
-                                    return Ok(res);
-                                }
-                            },
-                        },
-                        400 => return Err(QueryError::BadRequest400),
-                        413 => return Err(QueryError::PayloadTooLarge413),
-                        414 => return Err(QueryError::UriTooLong414),
-                        415 => return Err(QueryError::UnsupportedMediaType415),
-                        501 => return Err(QueryError::NotImplemented501),
-                        // If the following errors occur, the request will be retried on
-                        // the next server if one is available.
-                        429 => QueryError::TooManyRequests429,
-                        500 => QueryError::InternalServerError500,
-                        502 => QueryError::BadGateway502,
-                        504 => QueryError::ResolverTimeout504,
-                        _ => QueryError::Unknown,
-                    }
-                }
-                Err(_) => QueryError::Connection(format!(
-                    "connection timeout after {:?}",
-                    server.timeout()
-                )),
-            };
-            error!("request error on URL {}: {}", url, error);
-        }
-        Err(error)
-    }
+#[allow(non_snake_case)]
+#[derive(Deserialize, Debug, Serialize)]
+pub struct DnsResponse {
+    pub Status: u32,
+    pub Answer: Option<Vec<DnsAnswer>>,
+    pub Comment: Option<String>,
 }
 
 fn allow_cname(answer: &DnsAnswer, request: &Rtype) -> bool {
@@ -162,7 +134,7 @@ fn allow_cname(answer: &DnsAnswer, request: &Rtype) -> bool {
     return false;
 }
 
-struct Rtype(pub u32, pub &'static str);
+pub struct Rtype(pub u32, pub &'static str);
 
 macro_rules! rtypes {
     (
@@ -279,7 +251,7 @@ pub mod tests {
         Arc,
     };
     struct MockDnsClient {
-        response: Vec<(String, StatusCode)>,
+        response: Vec<(DnsResponse, QueryError)>,
         counter: Arc<AtomicUsize>,
     }
 
@@ -294,7 +266,7 @@ pub mod tests {
 
     #[async_trait]
     impl DnsClient for MockDnsClient {
-        async fn get(&self, _uri: Uri) -> HyperResult<Response<Body>> {
+        async fn request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError> {
             let counter = Arc::clone(&self.counter);
             let index = counter.fetch_add(1, Ordering::SeqCst);
             // If more calls than results are given, an out of bounds error should be obtained.

@@ -60,6 +60,7 @@
 #![feature(stmt_expr_attributes)]
 pub mod client;
 mod dns;
+pub use dns::*;
 pub mod error;
 pub mod status;
 #[macro_use]
@@ -67,32 +68,21 @@ extern crate serde_derive;
 extern crate num;
 #[macro_use]
 extern crate num_derive;
+#[macro_use]
+extern crate log;
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
-/// The data associated for requests returned by the DNS over HTTPS servers.
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct DnsAnswer {
-    /// The name of the record.
-    pub name: String,
-    /// The type associated with each record. To convert to a string representation use
-    /// [Dns::rtype_to_name].
-    pub r#type: u32,
-    /// The time to live in seconds for this record.
-    pub TTL: u32,
-    /// The data associated with the record.
-    pub data: String,
-}
+const GOOGLE: &[IpAddr] = &[
+    IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+    IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)),
+];
 
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize)]
-struct DnsResponse {
-    Status: u32,
-    Answer: Option<Vec<DnsAnswer>>,
-    Comment: Option<String>,
-}
-
-/// The list of DNS over HTTPS servers allowed to query with their respective timeouts.
+const CLOUDFLARE: &[IpAddr] = &[
+    IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+    IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1)),
+];
+/// The default list of DNS over HTTPS servers allowed to query with their respective timeouts.
 /// These servers are given to [Dns::with_servers] in order of priority. Only subsequent
 /// servers are used if the request needs to be retried.
 #[derive(Clone)]
@@ -102,33 +92,82 @@ pub enum DnsHttpsServer {
     /// given, `8.8.8.8` and `8.8.4.4` will be used in round robin form for each new
     /// connection.
     Google(Duration),
-    /// Cloudflare's `1.1.1.1` DOH server. Cloudflare does not respond to `ANY` Dns
+    /// Cloudflare's DOH server. Cloudflare does not respond to `ANY` Dns
     /// requests so [Dns::resolve_any] will always return an error.
-    Cloudflare1_1_1_1(Duration),
-    /// Cloudflare's `1.0.0.1` DOH server. Cloudflare does not respond to `ANY` Dns
-    /// requests so [Dns::resolve_any] will always return an error.
-    Cloudflare1_0_0_1(Duration),
+    Cloudflare(Duration),
+    /// Custom DOH server configuration with URI, static IPs and timeout.
+    Custom {
+        domain: String,
+        path: String,
+        addr: Vec<IpAddr>,
+        timeout: Duration,
+    },
 }
 
 impl DnsHttpsServer {
-    fn uri(&self) -> &str {
-        match self {
-            Self::Google(_) => "https://dns.google/resolve",
-            Self::Cloudflare1_1_1_1(_) => "https://1.1.1.1/dns-query",
-            Self::Cloudflare1_0_0_1(_) => "https://1.0.0.1/dns-query",
+    pub fn new(
+        domain: String,
+        path: String,
+        addr: Vec<IpAddr>,
+        timeout: Duration,
+    ) -> DnsHttpsServer {
+        DnsHttpsServer::Custom {
+            domain,
+            path,
+            addr,
+            timeout,
         }
     }
+
+    fn addr(&self) -> &[IpAddr] {
+        match self {
+            Self::Google(_) => GOOGLE,
+            Self::Cloudflare(_) => CLOUDFLARE,
+            Self::Custom {
+                domain: _,
+                path: _,
+                addr,
+                timeout: _,
+            } => addr,
+        }
+    }
+
+    fn domain(&self) -> &str {
+        match self {
+            Self::Google(_) => "dns.google",
+            Self::Cloudflare(_) => "cloudflare-dns.com",
+            Self::Custom {
+                domain,
+                path: _,
+                addr: _,
+                timeout: _,
+            } => domain,
+        }
+    }
+
+    fn path(&self) -> &str {
+        match self {
+            Self::Google(_) => "resolve",
+            Self::Cloudflare(_) => "dns-query",
+            Self::Custom {
+                domain: _,
+                path,
+                addr: _,
+                timeout: _,
+            } => path,
+        }
+    }
+
     fn timeout(&self) -> Duration {
         match self {
             Self::Google(t) => *t,
-            Self::Cloudflare1_1_1_1(t) => *t,
-            Self::Cloudflare1_0_0_1(t) => *t,
+            Self::Cloudflare(t) => *t,
+            Self::Custom {
+                domain: _,
+                path: _,
+                addr: _,
+                timeout,
+            } => *timeout,
         }
     }
-}
-
-/// The main interface to this library. It provides all functions to query records.
-pub struct Dns<C: client::DnsClient> {
-    client: C,
-    servers: Vec<DnsHttpsServer>,
 }
