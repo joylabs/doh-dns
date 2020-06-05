@@ -19,15 +19,9 @@ use hyper_tls::HttpsConnector;
 use tokio::time::timeout;
 use tower_service::Service;
 
-use crate::{dns::DnsResponse, dns::Rtype, error::QueryError, DnsHttpsServer};
+use crate::{dns::Rtype, error::QueryError, DnsHttpsServer};
 
-/// Creates a `GET` request over the given `URI` and returns its response. It is used to
-/// request data from DoH servers.
-#[async_trait]
-pub trait DnsClient {
-    async fn request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError>;
-}
-
+/// Builder for customizing the HyperDnsClient.
 pub struct Builder {
     servers: Option<Vec<DnsHttpsServer>>,
     pool_max_idle_per_host: usize,
@@ -115,6 +109,37 @@ where
     }
 }
 
+/// Creates a `GET` request over the given `URI` and returns its response. It is used to
+/// request data from DoH servers.
+#[async_trait]
+pub trait DnsClient {
+    async fn request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError>;
+}
+
+/// The response from the DoH server returned from the DnsClient implementation.
+#[allow(non_snake_case)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct DnsResponse {
+    pub Status: u32,
+    pub Answer: Option<Vec<DnsAnswer>>,
+    pub Comment: Option<String>,
+}
+
+/// The data associated for requests returned by the DNS over HTTPS servers.
+#[allow(non_snake_case)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct DnsAnswer {
+    /// The name of the record.
+    pub name: String,
+    /// The type associated with each record. To convert to a string representation use
+    /// [Dns::rtype_to_name].
+    pub r#type: u32,
+    /// The time to live in seconds for this record.
+    pub TTL: u32,
+    /// The data associated with the record.
+    pub data: String,
+}
+
 #[async_trait]
 impl<C> DnsClient for HyperDnsClient<C>
 where
@@ -181,7 +206,8 @@ where
     }
 }
 
-// This is a resolver that statically resolves the provided servers.
+/// This is a resolver for the HyperDnsClient that statically resolves
+/// the provided servers. The default client will try multiple IPs if specified.
 #[derive(Clone)]
 pub struct StaticResolver(HashMap<Name, Vec<IpAddr>>);
 
@@ -222,14 +248,71 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_static_resolve() {
-        let mut resolver =
-            UrlStaticResolver::new(&[DnsHttpsServer::Google(Duration::from_secs(10))]);
+        let mut resolver = StaticResolver::new(&[DnsHttpsServer::Google(Duration::from_secs(10))]);
         let n = Name::from_str("dns.google").unwrap();
         let mut g1 = resolver.call(n.clone()).await.unwrap();
-        assert_eq!(g1.next(), Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert_eq!(g1.next(), "8.8.8.8".parse().ok());
+        assert_eq!(g1.next(), "2001:4860:4860::8888".parse().ok());
+        assert_eq!(g1.next(), "8.8.4.4".parse().ok());
+        assert_eq!(g1.next(), "2001:4860:4860::8844".parse().ok());
         assert_eq!(g1.next(), None);
-        let mut g2 = resolver.call(n.clone()).await.unwrap();
-        assert_eq!(g2.next(), Some(IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4))));
-        assert_eq!(g2.next(), None);
     }
+
+    // TODO: mock hyper request
+    //     #[tokio::test]
+    //     async fn test_retries() {
+    //         let response: DnsResponse = serde_json::from_str(
+    //             r#"
+    // {
+    //   "Status": 0,
+    //   "TC": false,
+    //   "RD": true,
+    //   "RA": true,
+    //   "AD": false,
+    //   "CD": false,
+    //   "Question": [
+    //     {
+    //       "name": "www.google.com.",
+    //       "type": 1
+    //     }
+    //   ],
+    //   "Answer": [
+    //     {
+    //       "name": "www.google.com.",
+    //       "type": 1,
+    //       "TTL": 163,
+    //       "data": "172.217.11.164"
+    //     }
+    //   ]
+    // }"#,
+    //         )
+    //         .unwrap();
+    //         // Retry if more than server is given.
+    //         let d = HyperDnsClient::new(MockTransport::new(&[
+    //             Err(QueryError::InternalServerError500),
+    //             Ok(response.clone()),
+    //         ]));
+    //         let r = d.resolve_a("www.google.com").await.unwrap();
+    //         assert_eq!(r.len(), 1);
+    //         assert_eq!(r[0].name, "www.google.com.");
+    //         assert_eq!(r[0].data, "172.217.11.164");
+    //         assert_eq!(r[0].r#type, 1);
+    //         assert_eq!(r[0].TTL, 163);
+
+    //         // Not all errors should be retried.
+    //         let d = HyperDnsClient::new(MockTransport::new(&[
+    //             Err(QueryError::BadRequest400),
+    //             Ok(response.clone()),
+    //         ]));
+    //         let r = d.resolve_a("www.google.com").await;
+    //         assert!(r.is_err());
+
+    //         // If only one server is given, an error should be received.
+    //         let d = HyperDnsClient::new(MockTransport::new(&[
+    //             Err(QueryError::InternalServerError500),
+    //             Ok(response.clone()),
+    //         ]));
+    //         let r = d.resolve_a("www.google.com").await;
+    //         assert!(r.is_err());
+    // }
 }

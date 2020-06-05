@@ -1,4 +1,4 @@
-use crate::client::{DnsClient, HyperDnsClient};
+use crate::client::{DnsAnswer, DnsClient, HyperDnsClient};
 use crate::error::DnsError;
 use crate::status::RCode;
 use crate::DnsHttpsServer;
@@ -33,6 +33,9 @@ impl Dns<HyperDnsClient> {
 }
 
 impl<C: DnsClient> Dns<C> {
+    /// Use a specific DnsClient implementation when resolving records.
+    /// If you don't need to customize the client, you may use the Dns::default()
+    /// instead.
     pub fn new(client: C) -> Dns<C> {
         Dns { client }
     }
@@ -104,29 +107,6 @@ impl<C: DnsClient> Dns<C> {
     }
 }
 
-/// The data associated for requests returned by the DNS over HTTPS servers.
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct DnsAnswer {
-    /// The name of the record.
-    pub name: String,
-    /// The type associated with each record. To convert to a string representation use
-    /// [Dns::rtype_to_name].
-    pub r#type: u32,
-    /// The time to live in seconds for this record.
-    pub TTL: u32,
-    /// The data associated with the record.
-    pub data: String,
-}
-
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize)]
-pub struct DnsResponse {
-    pub Status: u32,
-    pub Answer: Option<Vec<DnsAnswer>>,
-    pub Comment: Option<String>,
-}
-
 fn allow_cname(answer: &DnsAnswer, request: &Rtype) -> bool {
     if request.0 == 1 || request.0 == 28 {
         return answer.r#type == 5;
@@ -134,6 +114,7 @@ fn allow_cname(answer: &DnsAnswer, request: &Rtype) -> bool {
     return false;
 }
 
+/// DNS record type.
 pub struct Rtype(pub u32, pub &'static str);
 
 macro_rules! rtypes {
@@ -244,19 +225,21 @@ rtypes! {
 #[cfg(test)]
 pub mod tests {
     use async_trait::async_trait;
-    use hyper::StatusCode;
-    use hyper::{error::Result as HyperResult, Body, Response, Uri};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
+
+    use crate::client::DnsResponse;
+    use crate::error::QueryError;
+
     struct MockDnsClient {
-        response: Vec<(DnsResponse, QueryError)>,
+        response: Vec<Result<DnsResponse, QueryError>>,
         counter: Arc<AtomicUsize>,
     }
 
     impl MockDnsClient {
-        fn new(response: &[(String, StatusCode)]) -> MockDnsClient {
+        fn new(response: &[Result<DnsResponse, QueryError>]) -> MockDnsClient {
             MockDnsClient {
                 response: response.to_vec(),
                 counter: Arc::new(AtomicUsize::new(0)),
@@ -266,16 +249,10 @@ pub mod tests {
 
     #[async_trait]
     impl DnsClient for MockDnsClient {
-        async fn request(&self, name: &str, rtype: &Rtype) -> Result<DnsResponse, QueryError> {
+        async fn request(&self, _name: &str, _rtype: &Rtype) -> Result<DnsResponse, QueryError> {
             let counter = Arc::clone(&self.counter);
             let index = counter.fetch_add(1, Ordering::SeqCst);
-            // If more calls than results are given, an out of bounds error should be obtained.
-            let chunks: Vec<Result<_, ::std::io::Error>> = vec![Ok(self.response[index].0.clone())];
-            let stream = futures_util::stream::iter(chunks);
-            let body = Body::wrap_stream(stream);
-            let mut response = Response::new(body);
-            *response.status_mut() = self.response[index].1;
-            Ok(response)
+            self.response[index].clone()
         }
     }
 
@@ -292,7 +269,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_a() {
-        let response = String::from(
+        let response = serde_json::from_str(
             r#"
         {
   "Status": 0,
@@ -341,34 +318,36 @@ pub mod tests {
   ],
   "Comment": "Response from 2600:1801:13::1."
     }"#,
-        );
-        let d = Dns {
-            client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
-        };
+        )
+        .unwrap();
+        let d = Dns::new(MockDnsClient::new(&[Ok(response)]));
         let r = d.resolve_a("sendgrid.com").await.unwrap();
-        assert_eq!(r.len(), 4);
-        assert_eq!(r[0].name, "sendgrid.com.");
-        assert_eq!(r[0].data, "169.45.113.198");
-        assert_eq!(r[0].r#type, 1);
-        assert_eq!(r[0].TTL, 89);
+        assert_eq!(r.len(), 5); // Including CNAME
+        assert_eq!(r[0].name, "www.sendgrid.com.");
+        assert_eq!(r[0].data, "sendgrid.com.");
+        assert_eq!(r[0].r#type, 5);
+        assert_eq!(r[0].TTL, 988);
         assert_eq!(r[1].name, "sendgrid.com.");
-        assert_eq!(r[1].data, "167.89.118.63");
+        assert_eq!(r[1].data, "169.45.113.198");
         assert_eq!(r[1].r#type, 1);
         assert_eq!(r[1].TTL, 89);
         assert_eq!(r[2].name, "sendgrid.com.");
-        assert_eq!(r[2].data, "169.45.89.183");
+        assert_eq!(r[2].data, "167.89.118.63");
         assert_eq!(r[2].r#type, 1);
         assert_eq!(r[2].TTL, 89);
         assert_eq!(r[3].name, "sendgrid.com.");
-        assert_eq!(r[3].data, "167.89.118.65");
+        assert_eq!(r[3].data, "169.45.89.183");
         assert_eq!(r[3].r#type, 1);
         assert_eq!(r[3].TTL, 89);
+        assert_eq!(r[4].name, "sendgrid.com.");
+        assert_eq!(r[4].data, "167.89.118.65");
+        assert_eq!(r[4].r#type, 1);
+        assert_eq!(r[4].TTL, 89);
     }
 
     #[tokio::test]
     async fn test_mx() {
-        let response = String::from(
+        let response: DnsResponse = serde_json::from_str(
             r#"
         {
   "Status": 0,
@@ -417,11 +396,9 @@ pub mod tests {
   ],
   "Comment": "Response from 2001:4860:4802:32::a."
 }"#,
-        );
-        let d = Dns {
-            client: MockDnsClient::new(&[(response.clone(), StatusCode::OK)]),
-            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
-        };
+        )
+        .unwrap();
+        let d = Dns::new(MockDnsClient::new(&[Ok(response.clone())]));
         let r = d.resolve_mx_and_sort("gmail.com").await.unwrap();
         assert_eq!(r.len(), 5);
         assert_eq!(r[0].name, "gmail.com.");
@@ -445,10 +422,7 @@ pub mod tests {
         assert_eq!(r[4].r#type, 15);
         assert_eq!(r[4].TTL, 3599);
 
-        let d = Dns {
-            client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
-        };
+        let d = Dns::new(MockDnsClient::new(&[Ok(response)]));
         let r = d.resolve_mx("gmail.com").await.unwrap();
         assert_eq!(r.len(), 5);
         assert_eq!(r[0].name, "gmail.com.");
@@ -475,7 +449,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_txt() {
-        let response = String::from(
+        let response = serde_json::from_str(
             r#"
         {
   "Status": 0,
@@ -524,11 +498,9 @@ pub mod tests {
   ],
   "Comment": "Response from 216.239.36.10."
 }"#,
-        );
-        let d = Dns {
-            client: MockDnsClient::new(&[(response, StatusCode::OK)]),
-            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
-        };
+        )
+        .unwrap();
+        let d = Dns::new(MockDnsClient::new(&[Ok(response)]));
         let r = d.resolve_txt("google.com").await.unwrap();
         assert_eq!(r.len(), 5);
         assert_eq!(r[0].name, "google.com.");
@@ -563,76 +535,5 @@ pub mod tests {
         assert_eq!(r[4].data, "\"v=spf1 include:_spf.google.com ~all\"");
         assert_eq!(r[4].r#type, 16);
         assert_eq!(r[4].TTL, 3599);
-    }
-
-    #[tokio::test]
-    async fn test_retries() {
-        let response = String::from(
-            r#"
-{
-  "Status": 0,
-  "TC": false,
-  "RD": true,
-  "RA": true,
-  "AD": false,
-  "CD": false,
-  "Question": [
-    {
-      "name": "www.google.com.",
-      "type": 1
-    }
-  ],
-  "Answer": [
-    {
-      "name": "www.google.com.",
-      "type": 1,
-      "TTL": 163,
-      "data": "172.217.11.164"
-    }
-  ]
-}"#,
-        );
-        // Retry if more than server is given.
-        let d = Dns {
-            client: MockDnsClient::new(&[
-                ("".to_owned(), StatusCode::INTERNAL_SERVER_ERROR),
-                (response.clone(), StatusCode::OK),
-            ]),
-            servers: vec![
-                DnsHttpsServer::Google(Duration::from_secs(5)),
-                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
-            ],
-        };
-        let r = d.resolve_a("www.google.com").await.unwrap();
-        assert_eq!(r.len(), 1);
-        assert_eq!(r[0].name, "www.google.com.");
-        assert_eq!(r[0].data, "172.217.11.164");
-        assert_eq!(r[0].r#type, 1);
-        assert_eq!(r[0].TTL, 163);
-
-        // Not all errors should be retried.
-        let d = Dns {
-            client: MockDnsClient::new(&[
-                ("".to_owned(), StatusCode::BAD_REQUEST),
-                (response.clone(), StatusCode::OK),
-            ]),
-            servers: vec![
-                DnsHttpsServer::Google(Duration::from_secs(5)),
-                DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(5)),
-            ],
-        };
-        let r = d.resolve_a("www.google.com").await;
-        assert!(r.is_err());
-
-        // If only one server is given, an error should be received.
-        let d = Dns {
-            client: MockDnsClient::new(&[
-                ("".to_owned(), StatusCode::INTERNAL_SERVER_ERROR),
-                (response.clone(), StatusCode::OK),
-            ]),
-            servers: vec![DnsHttpsServer::Google(Duration::from_secs(5))],
-        };
-        let r = d.resolve_a("www.google.com").await;
-        assert!(r.is_err());
     }
 }

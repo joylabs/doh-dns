@@ -38,7 +38,7 @@ impl Error for DnsError {
 /// Errors returned in the process of generating requests and reading responsed from DoH
 /// servers. Google's HTTP response codes can be seen at <https://developers.google.com/speed/public-dns/docs/doh>
 /// and Cloudflare's at <https://developers.cloudflare.com/1.1.1.1/dns-over-https/request-structure>.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum QueryError {
     /// This error occurs if the name to be resolved cannot be encoded.
     InvalidName(String),

@@ -24,11 +24,18 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // The following sets up the main DoH server to be Google with a default timeout
 //!     // of 2 seconds. If a retry is needed, the Cloudflare's 1.1.1.1 server is used.
-//!     // Alternatively, the default server setup can be used with:
+//!     // Alternatively, use your custom server setup with:
+//!     // let dns = Dns::with_servers(vec![DnsHttpsServer::new(
+//!     //       "doh.opendns.com".to_string(),
+//!     //       "dns-query".to_string(),
+//!     //       vec!["208.67.222.222".parse().unwrap(), "208.67.220.220".parse().unwrap()],
+//!     //       Duration::from_secs(10),
+//!     // ));
+//!     // Or use the default server setup with:
 //!     // let dns = Dns::default();
-//!     let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
+//!     let dns: Dns<HyperDnsClient> = Dns::with_servers(vec![
 //!         DnsHttpsServer::Google(Duration::from_secs(2)),
-//!         DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+//!         DnsHttpsServer::Cloudflare(Duration::from_secs(10)),
 //!     ])
 //!     .unwrap();
 //!     match dns.resolve_a("memo.com").await {
@@ -59,8 +66,9 @@
 #![feature(proc_macro_hygiene)]
 #![feature(stmt_expr_attributes)]
 pub mod client;
+pub use client::DnsAnswer;
 mod dns;
-pub use dns::*;
+pub use dns::Dns;
 pub mod error;
 pub mod status;
 #[macro_use]
@@ -70,18 +78,23 @@ extern crate num;
 extern crate num_derive;
 #[macro_use]
 extern crate log;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
 const GOOGLE: &[IpAddr] = &[
     IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+    IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)),
     IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)),
+    IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8844)),
 ];
 
 const CLOUDFLARE: &[IpAddr] = &[
     IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+    IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111)),
     IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1)),
+    IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1001)),
 ];
+
 /// The default list of DNS over HTTPS servers allowed to query with their respective timeouts.
 /// These servers are given to [Dns::with_servers] in order of priority. Only subsequent
 /// servers are used if the request needs to be retried.
