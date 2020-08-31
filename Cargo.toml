@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["dns", "doh"]
 description = """
-A DNS over HTTPS (DoH) library that queries public DoH servers provided by 
+A DNS over HTTPS (DoH) library that queries public DoH servers provided by
 Google and Clouflare based on `async/await`, `hyper`, and `tokio`.
 """
 

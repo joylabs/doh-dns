@@ -24,11 +24,18 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // The following sets up the main DoH server to be Google with a default timeout
 //!     // of 2 seconds. If a retry is needed, the Cloudflare's 1.1.1.1 server is used.
-//!     // Alternatively, the default server setup can be used with:
+//!     // Alternatively, use your custom server setup with:
+//!     // let dns = Dns::with_servers(vec![DnsHttpsServer::new(
+//!     //       "doh.opendns.com".to_string(),
+//!     //       "dns-query".to_string(),
+//!     //       vec!["208.67.222.222".parse().unwrap(), "208.67.220.220".parse().unwrap()],
+//!     //       Duration::from_secs(10),
+//!     // ));
+//!     // Or use the default server setup with:
 //!     // let dns = Dns::default();
-//!     let dns: Dns<HyperDnsClient> = Dns::with_servers(&[
+//!     let dns: Dns<HyperDnsClient> = Dns::with_servers(vec![
 //!         DnsHttpsServer::Google(Duration::from_secs(2)),
-//!         DnsHttpsServer::Cloudflare1_1_1_1(Duration::from_secs(10)),
+//!         DnsHttpsServer::Cloudflare(Duration::from_secs(10)),
 //!     ])
 //!     .unwrap();
 //!     match dns.resolve_a("memo.com").await {
@@ -56,10 +63,10 @@
 //! # Logging
 //! This library uses the `log` crate to log errors during retries. Please see that create
 //! on methods on display such errors. If no logger is setup, nothing will be logged.
-#![feature(proc_macro_hygiene)]
-#![feature(stmt_expr_attributes)]
 pub mod client;
+pub use client::DnsAnswer;
 mod dns;
+pub use dns::Dns;
 pub mod error;
 pub mod status;
 #[macro_use]
@@ -67,32 +74,26 @@ extern crate serde_derive;
 extern crate num;
 #[macro_use]
 extern crate num_derive;
+#[macro_use]
+extern crate log;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
-/// The data associated for requests returned by the DNS over HTTPS servers.
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct DnsAnswer {
-    /// The name of the record.
-    pub name: String,
-    /// The type associated with each record. To convert to a string representation use
-    /// [Dns::rtype_to_name].
-    pub r#type: u32,
-    /// The time to live in seconds for this record.
-    pub TTL: u32,
-    /// The data associated with the record.
-    pub data: String,
-}
+const GOOGLE: &[IpAddr] = &[
+    IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+    IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)),
+    IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)),
+    IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8844)),
+];
 
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug, Serialize)]
-struct DnsResponse {
-    Status: u32,
-    Answer: Option<Vec<DnsAnswer>>,
-    Comment: Option<String>,
-}
+const CLOUDFLARE: &[IpAddr] = &[
+    IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+    IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111)),
+    IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1)),
+    IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1001)),
+];
 
-/// The list of DNS over HTTPS servers allowed to query with their respective timeouts.
+/// The default list of DNS over HTTPS servers allowed to query with their respective timeouts.
 /// These servers are given to [Dns::with_servers] in order of priority. Only subsequent
 /// servers are used if the request needs to be retried.
 #[derive(Clone)]
@@ -102,33 +103,82 @@ pub enum DnsHttpsServer {
     /// given, `8.8.8.8` and `8.8.4.4` will be used in round robin form for each new
     /// connection.
     Google(Duration),
-    /// Cloudflare's `1.1.1.1` DOH server. Cloudflare does not respond to `ANY` Dns
+    /// Cloudflare's DOH server. Cloudflare does not respond to `ANY` Dns
     /// requests so [Dns::resolve_any] will always return an error.
-    Cloudflare1_1_1_1(Duration),
-    /// Cloudflare's `1.0.0.1` DOH server. Cloudflare does not respond to `ANY` Dns
-    /// requests so [Dns::resolve_any] will always return an error.
-    Cloudflare1_0_0_1(Duration),
+    Cloudflare(Duration),
+    /// Custom DOH server configuration with URI, static IPs and timeout.
+    Custom {
+        domain: String,
+        path: String,
+        addr: Vec<IpAddr>,
+        timeout: Duration,
+    },
 }
 
 impl DnsHttpsServer {
-    fn uri(&self) -> &str {
-        match self {
-            Self::Google(_) => "https://dns.google/resolve",
-            Self::Cloudflare1_1_1_1(_) => "https://1.1.1.1/dns-query",
-            Self::Cloudflare1_0_0_1(_) => "https://1.0.0.1/dns-query",
+    pub fn new(
+        domain: String,
+        path: String,
+        addr: Vec<IpAddr>,
+        timeout: Duration,
+    ) -> DnsHttpsServer {
+        DnsHttpsServer::Custom {
+            domain,
+            path,
+            addr,
+            timeout,
         }
     }
+
+    fn addr(&self) -> &[IpAddr] {
+        match self {
+            Self::Google(_) => GOOGLE,
+            Self::Cloudflare(_) => CLOUDFLARE,
+            Self::Custom {
+                domain: _,
+                path: _,
+                addr,
+                timeout: _,
+            } => addr,
+        }
+    }
+
+    fn domain(&self) -> &str {
+        match self {
+            Self::Google(_) => "dns.google",
+            Self::Cloudflare(_) => "cloudflare-dns.com",
+            Self::Custom {
+                domain,
+                path: _,
+                addr: _,
+                timeout: _,
+            } => domain,
+        }
+    }
+
+    fn path(&self) -> &str {
+        match self {
+            Self::Google(_) => "resolve",
+            Self::Cloudflare(_) => "dns-query",
+            Self::Custom {
+                domain: _,
+                path,
+                addr: _,
+                timeout: _,
+            } => path,
+        }
+    }
+
     fn timeout(&self) -> Duration {
         match self {
             Self::Google(t) => *t,
-            Self::Cloudflare1_1_1_1(t) => *t,
-            Self::Cloudflare1_0_0_1(t) => *t,
+            Self::Cloudflare(t) => *t,
+            Self::Custom {
+                domain: _,
+                path: _,
+                addr: _,
+                timeout,
+            } => *timeout,
         }
     }
-}
-
-/// The main interface to this library. It provides all functions to query records.
-pub struct Dns<C: client::DnsClient> {
-    client: C,
-    servers: Vec<DnsHttpsServer>,
 }
