@@ -42,7 +42,7 @@ impl Default for HyperDnsClient {
         ));
         connector.https_only(true);
         HyperDnsClient {
-            client: Client::builder().keep_alive(true).build(connector),
+            client: Client::builder().build(connector),
         }
     }
 }

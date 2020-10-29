@@ -259,6 +259,8 @@ rtypes! {
     (txt, 16);
     /// Queries a well known service description record for the given name.
     (wks, 11);
+    /// Queries a TYPE65 (aka HTTPS) record for the given name.
+    (type65, 65);
 }
 
 #[cfg(test)]
