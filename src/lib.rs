@@ -56,8 +56,6 @@
 //! # Logging
 //! This library uses the `log` crate to log errors during retries. Please see that create
 //! on methods on display such errors. If no logger is setup, nothing will be logged.
-#![feature(proc_macro_hygiene)]
-#![feature(stmt_expr_attributes)]
 pub mod client;
 mod dns;
 pub mod error;
