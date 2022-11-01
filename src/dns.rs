@@ -316,7 +316,7 @@ pub mod tests {
       "data": "167.89.118.65"
     }
   ],
-  "Comment": "Response from 2600:1801:13::1."
+  "Comment":["EDE(10): RRSIGs Missing (for DNSKEY at., id = 19294)"]
     }"#,
         )
         .unwrap();

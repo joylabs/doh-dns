@@ -122,7 +122,6 @@ pub trait DnsClient {
 pub struct DnsResponse {
     pub Status: u32,
     pub Answer: Option<Vec<DnsAnswer>>,
-    pub Comment: Option<String>,
 }
 
 /// The data associated for requests returned by the DNS over HTTPS servers.
