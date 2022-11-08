@@ -38,12 +38,12 @@ impl Error for DnsError {
 /// Errors returned in the process of generating requests and reading responsed from DoH
 /// servers. Google's HTTP response codes can be seen at <https://developers.google.com/speed/public-dns/docs/doh>
 /// and Cloudflare's at <https://developers.cloudflare.com/1.1.1.1/dns-over-https/request-structure>.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum QueryError {
     /// This error occurs if the name to be resolved cannot be encoded.
     InvalidName(String),
     /// This error occurs if there is a problem building the query URL.
-    InvalidEndpoint(String),
+    InvalidEndpoint(String, String),
     /// This error occurs if there is a problem connecting to the server.
     Connection(String),
     /// This error occurs if there is a problem reading a response from the server.
@@ -86,7 +86,7 @@ impl fmt::Display for QueryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             QueryError::InvalidName(ref e) => write!(f, "invalid server name given: {}", e),
-            QueryError::InvalidEndpoint(ref e) => write!(f, "invalid endpoint: {}", e),
+            QueryError::InvalidEndpoint(ref e, ref url) => write!(f, "invalid endpoint ({}): {}", url, e),
             QueryError::Connection(ref e) => write!(f, "connection error: {}", e),
             QueryError::ReadResponse(ref e) => write!(f, "error reading response: {}", e),
             QueryError::ParseResponse(ref e) => write!(f, "error parsing response: {}", e),
